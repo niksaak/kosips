@@ -13,5 +13,6 @@
   :components
   ((:file "asm" :depends-on ("utils" "packages"))
    (:file "asm2" :depends-on ("utils" "packages"))
+   (:file "asm3" :depends-on ("utils" "packages"))
    (:file "utils" :depends-on ("packages"))
    (:file "packages")))

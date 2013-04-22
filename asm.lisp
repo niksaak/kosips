@@ -1,4 +1,4 @@
-(in-package :kosips-asm)
+(in-package :kosips-asm-1)
 
 ;;;; Vars
 
