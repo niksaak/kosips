@@ -53,25 +53,36 @@
     ((string-equal "EX") #x1d)
     (_ (position r *registers* :test #'string-equal))))
 
-(defun val (spec)
+(defun label (label context)
+  (gethash label (assocd :labels context) nil))
+
+(defun val (spec context)
   (ematch spec
     ((list :register r) (retpair (register r)))
-    ((list :next num) (retpair #x1f (the dcpu-byte num)))
+    ;((list :next num) (retpair #x1f (the dcpu-byte num)))
+    ((list :next num)
+     (ematch num
+       ((list :label l) (retpair #x1f (label l context)))
+       (num (retpair #x1f (the dcpu-byte num)))))
     ((list (or :push :pop)) (retpair #x18))
     ((list :peek) (retpair #x19))
     ((list :pick num) (retpair #x1a (byteify-fixnum num)))
     ((list :infix num) (retpair (+ (the dcpu-infixnum num) 33)))
-    ((list :at (list :register r) offset) (retpair (+ (register r) #x10)
-                                                   (byteify-fixnum offset)))
+    ((list :at (list :register r) offset)
+     (ematch offset
+       ((list :label l)
+        (val `(:at (:register ,r) ,(label l context)) context))
+       (t (retpair (+ (register r) #x10)
+                     (byteify-fixnum offset)))))
     ((list :at place)
      (ematch place
        ((list :register r) (retpair (+ (register r) 8)))
        ((list :next num) (retpair #x1e (the dcpu-byte num)))))))
 
-(defun instruction (op value-1 &optional value-2)
+(defun instruction (op value-1 value-2 context)
   (let ((opcode (op op))
-        (val1 (val value-1))
-        (val2 (if value-2 (val value-2)))
+        (val1 (val value-1 context))
+        (val2 (if value-2 (val value-2 context)))
         (result (list)))
     (push opcode result)
     (cond ((zerop (boole boole-and opcode #x1f))
@@ -89,6 +100,10 @@
   `(instruction ',operator ',operand-1 ',operand-2))
 
 ;;;; reader:
+
+(defun make-walking-context ()
+  (list (cons :byte 0)
+        (cons :labels (make-hash-table :test 'equalp))))
 
 (defun parse-next (string)
   (let ((num (parse-prefixed-integer string)))
@@ -157,8 +172,8 @@
         (parse-pick string)
         (parse-reference string))))
 
-(defun asm (string)
+(defun asm (string context)
   (register-groups-bind (op val1 val2)
       ("^(\\S+)\\s+((?:pick|PICK)\\s+[^\\s,]+|[^\\s,]+)(?:(?:\\s+|\\s*,\\s*)((?:pick|PICK)\\s+\\S+|\\S+))?$"
        string)
-    (instruction op (parse-val val1) (parse-val val2 t))))
+    (instruction op (parse-val val1) (parse-val val2 t) context)))
