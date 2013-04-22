@@ -17,17 +17,32 @@
 
 ;;;; List manipulation
 
+(defun pair (&optional a b)
+  (cons a b))
+
 (defun assoca (item alist &key key (test #'eql))
   (car (assoc item alist :key key :test test)))
+
+(defsetf assoca (item alist &key key (test #'eql)) (val)
+  (rplaca (assoc item alist :key key :test test) val))
 
 (defun assocd (item alist &key key (test #'eql))
   (cdr (assoc item alist :key key :test test)))
 
+(defsetf assocd (item alist &key key (test #'eql)) (val)
+  (rplacd (assoc item alist :key key :test test) val))
+
 (defun rassoca (item alist &key key (test #'eql))
   (car (rassoc item alist :key key :test test)))
 
+(defsetf rassoca (item alist &key key (test #'eql)) (val)
+  (rplaca (rassoc item alist :key key :test test) val))
+
 (defun rassocd (item alist &key key (test #'eql))
   (cdr (rassoc item alist :key key :test test)))
+
+(defsetf rassocd (item alist &key key (test #'eql)) (val)
+  (rplacd (rassoc item alist :key key :test test) val))
 
 (defun tpush (item list)
   (nconc list (list item)))
