@@ -35,12 +35,11 @@
      (("PC" . #x1b) ("SP" . #x1c) ("EX" . #x1d)))))
 
 (defun byteify-fixnum (num)
+  "Make fixnum into dcpu-byte"
   (declare (type dcpu-fixnum num))
-  (if (minusp num)
-      (+ #x10000 num)
-      num))
+  (the dcpu-byte (if (minusp num) (+ #x10000 num) num)))
 
-;;;; Translator
+;;;; Translator ;;;2;;;;;;;;;3;;;;;;;;;4;;;;;;;;;5;;;;;;;;;6;;;;;;;;;7
 
 (defun translate-operator (op)
   (let ((basic (assocd 'basic *opcodes*))
@@ -70,3 +69,103 @@
         (pair (+ (translate-register r) 8)))
        ((list (list :next num))
         (pair #x1e (the dcpu-byte num)))))))
+
+(defun translate-instruction (operator operand-1 &optional operand-2)
+  (let* ((opcode (translate-operator operator))
+         (val-1 (translate-operand operand-1))
+         (val-2 (translate-operand operand-2))
+         (result (list opcode)))
+    (format t "~S ~S ~S ~S" opcode val-1 val-2 result)
+    (cond ((zerop (boole boole-and opcode #x1f))
+           (assert (not operand-2) nil
+                   "Too many operands for ~S" operator)
+           (setf (ldb (byte 6 10) (car result)) (car val-1))
+           (when (cdr val-1) (tpush (cdr val-1) result)))
+          (t
+           (assert (and operand-1 operand-2) nil
+                   "Not enough operands for ~S" operator)
+           (setf (ldb (byte 5 5) (car result)) (car val-1))
+           (setf (ldb (byte 6 10) (car result)) (car val-2))
+           (when (cdr val-2) (tpush (cdr val-2) result))
+           (when (cdr val-1) (tpush (cdr val-1) result))))
+    (values result)))
+
+;;;; Preprocessor ;2;;;;;;;;;3;;;;;;;;;4;;;;;;;;;5;;;;;;;;;6;;;;;;;;;7
+
+; Format for labels:
+; defining form: (:definition (:label "name") addr)
+; definition: ((:label "name") . addr)
+; invocation: (:label "name")
+
+(deftype definition-ident ()
+  '(cons keyword (cons string)))
+
+(deftype definition ()
+  '(cons definition-ident t))
+
+(deftype invocation ()
+  '(cons keyword list))
+
+(defstruct walking-context
+  (pass 0               :type fixnum)
+  (pass-differs nil     :type boolean)
+  (byte-count 0         :type fixnum)
+  (instruction-count 0  :type fixnum)
+  (definitions (make-array '(32)
+                           :element-type 'definition
+                           :adjustable t
+                           :fill-pointer 0)))
+
+(defun increment-pass (context)
+  (declare (walking-context context))
+  (incf (walking-context-pass context))
+  (setf (walking-context-pass-differs context) nil))
+
+(defun pass-differs (context)
+  (declare (walking-context context))
+  (setf (walking-context-pass-differs context) t))
+
+(defun increment-byte-count (context delta)
+  (declare (walking-context context)
+           (fixnum delta))
+  (incf (walking-context-byte-count context) delta))
+
+(defun increment-instruction-count (context)
+  (declare (walking-context context))
+  (incf (walking-context-instruction-count context)))
+
+(defun definition-position (ident context)
+  (declare (definition-ident ident)
+           (walking-context context))
+  (loop
+     for def across (walking-context-definitions context)
+     and i upfrom 0
+     if (equal ident (car def)) do
+       (return i)))
+
+(defun push-definition (definition context)
+  (declare (definition definition)
+           (walking-context context))
+  (let ((defs (walking-context-definitions context))
+        (index (definition-position (car definition) context)))
+    (if index
+        (setf (elt defs index) (cdr definition))
+        (vector-push-extend definition defs))))
+
+(defun resolve-label (label context)
+  (declare (invocation label)
+           (walking-context context))
+  (loop for d across (walking-context-definitions context)
+     if (eql (caar d) :label)
+     if (string-equal (cadar d) (cadr label)) do
+       (return (cdr d))
+     finally (return nil)))
+
+(defun shift-labels (after-byte shift context)
+  (declare (fixnum after-byte)
+           (walking-context context))
+  (loop for def across (walking-context-definitions context)
+     if (eql (caar def) :label)
+     if (> (cdr def) after-byte) do
+       (incf (cdr def) shift)
+     finally (return nil)))
